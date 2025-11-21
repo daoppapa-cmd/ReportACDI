@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>HR Data Center</title>
-    <link
+     <link
       rel="icon"
       href="https://i.postimg.cc/Kznc22dF/app-settings.png"
       type="image/jpeg"
@@ -79,7 +79,7 @@
             MapPin, Home, Briefcase, AlertCircle, Send, Users, 
             IdCard, Building, CheckCircle, Printer, Download,
             Settings, Calendar, CalendarRange, Filter, ChevronRight,
-            Gavel, ChevronDown, Trash2
+            Gavel, ChevronDown, Trash2, ListFilter
         } from 'https://esm.sh/lucide-react@0.469.0?deps=react@18.3.1';
 
         // --- Helper Functions ---
@@ -228,6 +228,16 @@
             );
         };
 
+        // --- Toggle Component ---
+        const Toggle = ({ label, checked, onChange }) => (
+            <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 cursor-pointer" onClick={() => onChange(!checked)}>
+                <span className="text-gray-700 font-medium text-sm">{label}</span>
+                <div className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 ease-in-out relative ${checked ? 'bg-blue-600' : 'bg-gray-300'}`}>
+                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ease-in-out absolute top-1 ${checked ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                </div>
+            </div>
+        );
+
         // --- Settings Component ---
         const SettingsPage = ({ filterConfig, setFilterConfig }) => {
             const currentYear = new Date().getFullYear();
@@ -247,7 +257,7 @@
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
                         <h3 className="font-bold text-lg mb-4 text-gray-700 flex items-center gap-2">
                             <Filter className="w-5 h-5" />
-                            ជម្រើសនៃការបង្ហាញ
+                            ជម្រើសកាលបរិច្ឆេទ
                         </h3>
                         
                         {/* Filter Mode Selection */}
@@ -329,6 +339,37 @@
                                 </p>
                             </div>
                         )}
+                    </div>
+
+                    {/* Advanced Filters Section */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+                        <h3 className="font-bold text-lg mb-4 text-gray-700 flex items-center gap-2">
+                            <ListFilter className="w-5 h-5" />
+                            សម្រាំងបុគ្គលិក (Advanced Filters)
+                        </h3>
+                        <div className="space-y-1">
+                            <Toggle 
+                                label="បង្ហាញតែបុគ្គលិក គ្មានសំណើរ" 
+                                checked={filterConfig.onlyNoRequest} 
+                                onChange={(val) => {
+                                    handleFilterChange('onlyNoRequest', val);
+                                    if(val) handleFilterChange('onlyHasRequest', false); 
+                                }} 
+                            />
+                            <Toggle 
+                                label="បង្ហាញតែបុគ្គលិក ដែលមានសំណើរ" 
+                                checked={filterConfig.onlyHasRequest} 
+                                onChange={(val) => {
+                                    handleFilterChange('onlyHasRequest', val);
+                                    if(val) handleFilterChange('onlyNoRequest', false); 
+                                }} 
+                            />
+                            <Toggle 
+                                label="បង្ហាញតែបុគ្គលិក មានវិន័យ" 
+                                checked={filterConfig.onlyHasDiscipline} 
+                                onChange={(val) => handleFilterChange('onlyHasDiscipline', val)} 
+                            />
+                        </div>
                     </div>
                 </div>
             );
@@ -540,6 +581,19 @@
             const CACHE_KEY = 'hr_data_cache_v1';
             const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
 
+            // Filter State
+            const [filterConfig, setFilterConfig] = useState({
+                mode: 'month', // 'month' or 'range'
+                month: new Date().getMonth(),
+                year: new Date().getFullYear(),
+                fromDate: '',
+                toDate: '',
+                // Advanced Filters
+                onlyNoRequest: false,
+                onlyHasRequest: false,
+                onlyHasDiscipline: false
+            });
+
             // Close print menu when clicking outside
             useEffect(() => {
                 function handleClickOutside(event) {
@@ -550,15 +604,6 @@
                 document.addEventListener("mousedown", handleClickOutside);
                 return () => document.removeEventListener("mousedown", handleClickOutside);
             }, []);
-
-            // Filter State
-            const [filterConfig, setFilterConfig] = useState({
-                mode: 'month', // 'month' or 'range'
-                month: new Date().getMonth(),
-                year: new Date().getFullYear(),
-                fromDate: '',
-                toDate: ''
-            });
 
             const currentDateDisplay = useMemo(() => {
                 if (filterConfig.mode === 'month') {
@@ -837,12 +882,25 @@
             };
 
             const filteredStaff = Object.values(staffData).filter(staff => {
+                // Search Filter
                 const term = searchTerm.toLowerCase();
-                return (
+                const matchesSearch = (
                     staff.name.toLowerCase().includes(term) ||
                     (staff.enName && staff.enName.toLowerCase().includes(term)) ||
                     staff.id.toLowerCase().includes(term)
                 );
+
+                if (!matchesSearch) return false;
+
+                // Advanced Logic Filters
+                const requestCount = staff.gatePasses.length + staff.leaves.length + staff.homeLeaves.length;
+                const disciplineCount = staff.discipline.length;
+
+                if (filterConfig.onlyNoRequest && requestCount > 0) return false;
+                if (filterConfig.onlyHasRequest && requestCount === 0) return false;
+                if (filterConfig.onlyHasDiscipline && disciplineCount === 0) return false;
+
+                return true;
             });
 
             if (selectedStaff) {
