@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HR Data Center</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Standard Fonts Preload -->
+    <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:ital,wght@0,100..700;1,100..700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Moul&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Kantumruy Pro', 'Poppins', sans-serif;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            background-color: #f3f4f6;
+        }
+
+        .font-khmer { font-family: 'Kantumruy Pro', sans-serif; }
+        .font-moul { font-family: 'Moul', serif; }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }
+        .card-hover-effect { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .card-hover-effect:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+
+        /* Hide scrollbar for clean UI */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Dropdown animation */
+        .dropdown-enter { opacity: 0; transform: scale(0.95); }
+        .dropdown-enter-active { opacity: 1; transform: scale(1); transition: opacity 200ms, transform 200ms; }
+        .dropdown-exit { opacity: 1; transform: scale(1); }
+        .dropdown-exit-active { opacity: 0; transform: scale(0.95); transition: opacity 200ms, transform 200ms; }
+
+        /* Print Specific Styles */
+        @media print {
+            @page { size: A4; margin: 10mm; }
+            body { background: white; }
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            
+            /* Ensure tables can break across pages */
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+            
+            * { box-shadow: none !important; text-shadow: none !important; }
+        }
+        .print-only { display: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- Main Application Script -->
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo, useRef } from 'https://esm.sh/react@18.3.1';
+        import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1';
+        import { 
+            Search, User, Clock, FileText, ArrowRight, RefreshCcw, 
+            MapPin, Home, Briefcase, AlertCircle, Send, Users, 
+            IdCard, Building, CheckCircle, Printer, Download,
+            Settings, Calendar, CalendarRange, Filter, ChevronRight,
+            Gavel, ChevronDown, Trash2
+        } from 'https://esm.sh/lucide-react@0.469.0?deps=react@18.3.1';
+
+        // --- Helper Functions ---
+
+        const getColIndex = (letter) => {
+            if (!letter) return -1;
+            const upper = letter.toUpperCase();
+            let index = 0;
+            for (let i = 0; i < upper.length; i++) {
+                index = index * 26 + (upper.charCodeAt(i) - 64);
+            }
+            return index - 1;
+        };
+
+        const parseCSV = (text) => {
+            const rows = [];
+            let currentRow = [];
+            let currentCell = '';
+            let insideQuotes = false;
+
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i + 1];
+
+                if (char === '"') {
+                    if (insideQuotes && nextChar === '"') {
+                        currentCell += '"';
+                        i++;
+                    } else {
+                        insideQuotes = !insideQuotes;
+                    }
+                } else if (char === ',' && !insideQuotes) {
+                    currentRow.push(currentCell.trim());
+                    currentCell = '';
+                } else if ((char === '\n' || char === '\r') && !insideQuotes) {
+                    if (char === '\r' && nextChar === '\n') i++;
+                    currentRow.push(currentCell.trim());
+                    if (currentRow.length > 0) rows.push(currentRow);
+                    currentRow = [];
+                    currentCell = '';
+                } else {
+                    currentCell += char;
+                }
+            }
+            if (currentCell) currentRow.push(currentCell.trim());
+            if (currentRow.length > 0) rows.push(currentRow);
+            return rows;
+        };
+
+        const parseDate = (dateStr) => {
+            if (!dateStr) return null;
+            let date = new Date(dateStr);
+            if (!isNaN(date.getTime())) return date;
+            const parts = dateStr.split(/[\/\-]/);
+            if (parts.length === 3) {
+                const day = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                const year = parseInt(parts[2], 10);
+                date = new Date(year, month, day);
+                if (!isNaN(date.getTime())) return date;
+            }
+            return null;
+        };
+
+        // --- Khmer Date Formatting Helpers ---
+        const khmerNums = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];
+        const khmerMonths = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'];
+
+        const toKhmerNum = (num) => {
+            if (num === undefined || num === null) return "";
+            return num.toString().replace(/\d/g, (d) => khmerNums[d]);
+        };
+
+        const formatKhmerDate = (dateInput) => {
+            let date = dateInput;
+            if (typeof dateInput === 'string') {
+                date = parseDate(dateInput);
+            }
+            if (!date || isNaN(date.getTime())) return dateInput;
+
+            const day = toKhmerNum(date.getDate().toString().padStart(2, '0'));
+            const month = khmerMonths[date.getMonth()];
+            const year = toKhmerNum(date.getFullYear());
+            return `${day}-${month}-${year}`;
+        };
+
+        // Helper to fix broken Telegram links
+        const normalizeUrl = (url) => {
+            if (!url) return '#';
+            let link = url.trim();
+            
+            // Remove any spaces
+            link = link.replace(/\s/g, '');
+
+            // Check if it already has protocol
+            if (!link.startsWith('http://') && !link.startsWith('https://')) {
+                // If it starts with t.me (e.g. t.me/username), just add https://
+                if (link.toLowerCase().startsWith('t.me')) {
+                    return 'https://' + link;
+                }
+                // If it starts with @ (e.g. @username), remove @ and add t.me prefix
+                if (link.startsWith('@')) {
+                    return 'https://t.me/' + link.substring(1);
+                }
+                // If it looks like a plain username (no dots, no slashes), add t.me prefix
+                if (!link.includes('.') && !link.includes('/')) {
+                     return 'https://t.me/' + link;
+                }
+                // Otherwise (e.g. facebook.com/user), assume it's a website and add https://
+                return 'https://' + link;
+            }
+            return link;
+        };
+
+        const SHEETS = {
+            gatePass: { id: '18oonwPyyU6I0hHX-vucvoYSqGf_S7wPnQX817CqauPE', name: 'Requests', startRow: 2, cols: { id: 'C', name: 'D', dateOut: 'F', timeOut: 'A', dateIn: 'K', timeIn: 'N', reason: 'H', duration: 'G', status: 'I' } },
+            leave: { id: '1xpy1CDg3LTD1iYPXKbfJrjldR5vVW3AhoNSwTzb8wDY', name: 'CRBRequests', startRow: 2, cols: { id: 'C', name: 'D', date: 'F', time: 'A', reason: 'H', duration: 'G', status: 'I' } },
+            homeLeave: { id: '1qaPPrvbU7TW5OPeb_U3kxWffE26Ob7vK4Z9tkc8HlZ8', name: 'ច្បាប់ទៅផ្ទះ', startRow: 564, cols: { id: 'H', name: 'B', dateOut: 'L', timeOut: 'O', dateIn: 'P', timeIn: 'Q', reason: 'J', duration: 'K' } },
+            attendance: { id: '14eA00GXamqLkhuLAzVYPOBKads7XUZ5mfVRyqSGQwfk', name: 'Data', startRow: 34, cols: { id: 'G', date: 'H', shift: 'I', timeIn: 'J', timeOut: 'K' } },
+            masterList: { id: '1eRyPoifzyvB4oBmruNyXcoKMKPRqjk6xDD6-bPNW6pc', name: 'DIList', startRow: 9, cols: { photo: 'AA', id: 'E', group: 'G', gender: 'N', khName: 'L', enName: 'M', grade: 'R', dept: 'S', telegram: 'W' } },
+            discipline: { id: '1hR2o9cNVVGzc9FrSAm4k9bAN3kAScHiFnvBlmaDgOSU', name: 'DB', startRow: 2, cols: { date: 'A', id: 'B', name: 'C', offense: 'G', penalty: 'H' } },
+            cleaning: { id: '1MyMt7y4tfzHbTbDz0n0ukrU1e_2NlYIV_InPMtkCVuo', name: 'DB', startRow: 2, cols: { date: 'A', id: 'B', offense: 'G', penalty: 'H' } }
+        };
+
+        // --- Mobile Bottom Navigation ---
+        const MobileNav = ({ activeTab, setActiveTab }) => {
+            return (
+                <div className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 pb-safe z-50 shadow-lg-up">
+                    <div className="flex justify-around items-center h-16">
+                        <button 
+                            onClick={() => setActiveTab('home')}
+                            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === 'home' ? 'text-blue-700' : 'text-gray-400'}`}
+                        >
+                            <Home className={`w-6 h-6 ${activeTab === 'home' ? 'fill-current' : ''}`} />
+                            <span className="text-[10px] font-bold">ទំព័រដើម</span>
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('settings')}
+                            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === 'settings' ? 'text-blue-700' : 'text-gray-400'}`}
+                        >
+                            <Settings className={`w-6 h-6 ${activeTab === 'settings' ? 'fill-current' : ''}`} />
+                            <span className="text-[10px] font-bold">ការកំណត់</span>
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Settings Component ---
+        const SettingsPage = ({ filterConfig, setFilterConfig }) => {
+            const currentYear = new Date().getFullYear();
+            const years = Array.from({length: 5}, (_, i) => currentYear - 2 + i); // 5 years range
+
+            const handleFilterChange = (key, value) => {
+                setFilterConfig(prev => ({ ...prev, [key]: value }));
+            };
+
+            return (
+                <div className="p-4 max-w-2xl mx-auto pb-24 animate-fade-in-up">
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center gap-2">
+                        <Settings className="w-6 h-6 text-blue-600" />
+                        ការកំណត់ទិន្នន័យ
+                    </h2>
+
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+                        <h3 className="font-bold text-lg mb-4 text-gray-700 flex items-center gap-2">
+                            <Filter className="w-5 h-5" />
+                            ជម្រើសនៃការបង្ហាញ
+                        </h3>
+                        
+                        {/* Filter Mode Selection */}
+                        <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl mb-6">
+                            <button 
+                                onClick={() => handleFilterChange('mode', 'month')}
+                                className={`py-2 px-4 rounded-lg text-sm font-bold transition-all ${filterConfig.mode === 'month' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                ប្រចាំខែ
+                            </button>
+                            <button 
+                                onClick={() => handleFilterChange('mode', 'range')}
+                                className={`py-2 px-4 rounded-lg text-sm font-bold transition-all ${filterConfig.mode === 'range' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                ចន្លោះថ្ងៃ
+                            </button>
+                        </div>
+
+                        {/* Month/Year Selection */}
+                        {filterConfig.mode === 'month' && (
+                            <div className="space-y-4 animate-fade-in-up">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-600 mb-2">ជ្រើសរើសខែ</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {khmerMonths.map((m, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => handleFilterChange('month', idx)}
+                                                className={`p-2 rounded-lg text-sm border ${filterConfig.month === idx ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold' : 'border-gray-200 hover:bg-gray-50 text-gray-600'}`}
+                                            >
+                                                {m}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-600 mb-2">ជ្រើសរើសឆ្នាំ</label>
+                                    <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+                                        {years.map(y => (
+                                            <button
+                                                key={y}
+                                                onClick={() => handleFilterChange('year', y)}
+                                                className={`px-4 py-2 rounded-full text-sm border whitespace-nowrap ${filterConfig.year === y ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                                            >
+                                                {toKhmerNum(y)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Date Range Selection */}
+                        {filterConfig.mode === 'range' && (
+                            <div className="space-y-4 animate-fade-in-up">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-600 mb-2">ចាប់ពីថ្ងៃ</label>
+                                        <input 
+                                            type="date" 
+                                            value={filterConfig.fromDate}
+                                            onChange={(e) => handleFilterChange('fromDate', e.target.value)}
+                                            className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-600 mb-2">ដល់ថ្ងៃ</label>
+                                        <input 
+                                            type="date" 
+                                            value={filterConfig.toDate}
+                                            onChange={(e) => handleFilterChange('toDate', e.target.value)}
+                                            className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-500 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                    <AlertCircle className="w-3 h-3 inline mr-1" />
+                                    ទិន្នន័យទាំងអស់នឹងត្រូវបានគណនាឡើងវិញដោយផ្អែកលើចន្លោះថ្ងៃដែលអ្នកបានជ្រើសរើស។
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Print Layout Component ---
+        const PrintLayout = ({ staff, currentDateDisplay, printMode }) => {
+            if (!staff) return null;
+            
+            const today = new Date();
+            const generatedDateKh = formatKhmerDate(today);
+
+            const allLeaves = [
+                ...staff.gatePasses.map(i => ({...i, type: 'ចេញក្រៅ'})), 
+                ...staff.leaves.map(i => ({...i, type: 'ឈប់សម្រាក'})),
+                ...staff.homeLeaves.map(i => ({...i, type: 'ទៅផ្ទះ'}))
+            ];
+
+            const showDiscipline = printMode === 'full' && staff.discipline && staff.discipline.length > 0;
+
+            return (
+                <div className="print-only p-8 max-w-[210mm] mx-auto bg-white text-black font-khmer">
+                    <div className="flex items-center justify-start gap-6 mb-4 border-b-4 border-blue-900 pb-4">
+                        <img 
+                            src="https://i.postimg.cc/y8JT87FC/di3-copy.png" 
+                            alt="Company Logo" 
+                            className="h-20 w-auto object-contain"
+                        />
+                        <div>
+                            <h1 className="text-3xl font-moul font-bold text-blue-900 tracking-wide">ឧស្សាហកម្មឌីជីថល</h1>
+                            <h2 className="text-xl font-bold mt-2">របាយការណ៍វត្តមានបុគ្គលិក</h2>
+                            <p className="text-sm text-gray-600 mt-1">{currentDateDisplay}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-6 mb-6 items-start">
+                        <div className="w-32 h-32 border-2 border-blue-100 rounded-lg overflow-hidden shadow-sm">
+                            {staff.photo ? (
+                                <img src={staff.photo} alt="Profile" className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">No Photo</div>
+                            )}
+                        </div>
+                        <div className="flex-1 grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                            <div className="flex border-b border-gray-100 pb-1"><span className="w-32 font-bold text-gray-600">ឈ្មោះ (ខ្មែរ):</span> <span className="font-bold text-lg">{staff.name}</span></div>
+                            <div className="flex border-b border-gray-100 pb-1"><span className="w-32 font-bold text-gray-600">ឈ្មោះ (ឡាតាំង):</span> <span className="uppercase font-bold">{staff.enName}</span></div>
+                            <div className="flex border-b border-gray-100 pb-1"><span className="w-32 font-bold text-gray-600">អត្តលេខ (ID):</span> <span>{staff.id}</span></div>
+                            <div className="flex border-b border-gray-100 pb-1"><span className="w-32 font-bold text-gray-600">ភេទ:</span> <span>{staff.gender}</span></div>
+                            <div className="flex border-b border-gray-100 pb-1"><span className="w-32 font-bold text-gray-600">ថ្នាក់:</span> <span>{staff.grade}</span></div>
+                            <div className="flex border-b border-gray-100 pb-1"><span className="w-32 font-bold text-gray-600">ផ្នែក:</span> <span>{staff.dept}</span></div>
+                            <div className="flex border-b border-gray-100 pb-1"><span className="w-32 font-bold text-gray-600">ក្រុម:</span> <span>{staff.group}</span></div>
+                        </div>
+                    </div>
+
+                    <div className="mb-4">
+                        <h2 className="text-lg font-bold mb-2 border-l-4 border-blue-800 pl-3 text-blue-900">សង្ខេបព័ត៌មាន</h2>
+                        <div className={`grid ${showDiscipline ? 'grid-cols-5' : 'grid-cols-4'} gap-4 text-center`}>
+                            <div className="border border-gray-200 p-3 rounded-lg bg-gray-50">
+                                <div className="text-xs text-gray-500 mb-1">វត្តមានសរុប</div>
+                                <div className="font-bold text-xl text-green-700">{toKhmerNum(staff.attendance.length)} ថ្ងៃ</div>
+                            </div>
+                            <div className="border border-gray-200 p-3 rounded-lg bg-gray-50">
+                                <div className="text-xs text-gray-500 mb-1">ច្បាប់ចេញក្រៅ</div>
+                                <div className="font-bold text-xl text-orange-600">{toKhmerNum(staff.gatePasses.length)} ដង</div>
+                            </div>
+                            <div className="border border-gray-200 p-3 rounded-lg bg-gray-50">
+                                <div className="text-xs text-gray-500 mb-1">ច្បាប់សម្រាក</div>
+                                <div className="font-bold text-xl text-red-600">{toKhmerNum(staff.leaves.length)} ដង</div>
+                            </div>
+                            <div className="border border-gray-200 p-3 rounded-lg bg-gray-50">
+                                <div className="text-xs text-gray-500 mb-1">ច្បាប់ទៅផ្ទះ</div>
+                                <div className="font-bold text-xl text-blue-600">{toKhmerNum(staff.homeLeaves.length)} ដង</div>
+                            </div>
+                            {showDiscipline && (
+                                <div className="border border-gray-200 p-3 rounded-lg bg-red-50 border-red-200">
+                                    <div className="text-xs text-red-500 mb-1">ល្មើសវិន័យ</div>
+                                    <div className="font-bold text-xl text-red-700">{toKhmerNum(staff.discipline.length)} ដង</div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="mb-4 print-break-inside-avoid">
+                        <h2 className="text-lg font-bold mb-2 border-l-4 border-blue-800 pl-3 text-blue-900">កំណត់ត្រាវត្តមាន</h2>
+                        <table className="w-full text-sm border-collapse border border-gray-300">
+                            <thead>
+                                <tr className="bg-blue-50 text-blue-900">
+                                    <th className="border border-gray-300 p-2 text-Center">កាលបរិច្ឆេទ</th>
+                                    <th className="border border-gray-300 p-2 text-Center">វេន</th>
+                                    <th className="border border-gray-300 p-2 text-Center">ចូល</th>
+                                    <th className="border border-gray-300 p-2 text-Center">ចេញ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {staff.attendance.length > 0 ? staff.attendance.map((att, idx) => (
+                                    <tr key={idx} className="even:bg-gray-50">
+                                        <td className="border border-gray-300 p-2">{formatKhmerDate(att.date)}</td>
+                                        <td className="border border-gray-300 p-2">{att.shift}</td>
+                                        <td className="border border-gray-300 p-2 text-left">{att.in}</td>
+                                        <td className="border border-gray-300 p-2 text-left">{att.out}</td>
+                                    </tr>
+                                )) : (
+                                    <tr><td colSpan="4" className="border border-gray-300 p-4 text-center text-gray-500">គ្មានទិន្នន័យ</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="mb-8 print-break-inside-avoid">
+                        <h2 className="text-lg font-bold mb-2 border-l-4 border-blue-800 pl-3 text-blue-900">កំណត់ត្រាច្បាប់ផ្សេងៗ</h2>
+                        <table className="w-full text-sm border-collapse border border-gray-300">
+                            <thead>
+                                <tr className="bg-blue-50 text-blue-900">
+                                    <th className="border border-gray-300 p-2 text-Center">ប្រភេទ</th>
+                                    <th className="border border-gray-300 p-2 text-Center">មូលហេតុ</th>
+                                    <th className="border border-gray-300 p-2 text-Center">កាលបរិច្ឆេទ/ម៉ោង</th>
+                                    <th className="border border-gray-300 p-2 text-Center">រយៈពេល</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {allLeaves.length > 0 ? (
+                                    allLeaves.map((item, idx) => (
+                                        <tr key={idx} className="even:bg-gray-50">
+                                            <td className="border border-gray-300 p-2 font-bold text-blue-800">{item.type}</td>
+                                            <td className="border border-gray-300 p-2">{item.reason}</td>
+                                            <td className="border border-gray-300 p-2">
+                                                {item.date ? formatKhmerDate(item.date) : `${formatKhmerDate(item.dateOut)} - ${formatKhmerDate(item.dateIn)}`} 
+                                                <br/>
+                                                <span className="text-xs text-gray-500 font-sans">{item.time || `${item.timeOut} - ${item.timeIn}`}</span>
+                                            </td>
+                                            <td className="border border-gray-300 p-2 text-left">{toKhmerNum(item.duration || "")}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr><td colSpan="4" className="border border-gray-300 p-4 text-center text-gray-500">គ្មានទិន្នន័យ</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Discipline Section - Conditionally Rendered */}
+                    {showDiscipline && (
+                        <div className="mb-8 print-break-inside-avoid">
+                            <h2 className="text-lg font-bold mb-2 border-l-4 border-red-600 pl-3 text-red-700">កំណត់ត្រាវិន័យ និងសណ្ដាប់ធ្នាប់</h2>
+                            <table className="w-full text-sm border-collapse border border-gray-300">
+                                <thead>
+                                    <tr className="bg-red-50 text-red-900">
+                                        <th className="border border-gray-300 p-2 text-center">កាលបរិច្ឆេទ</th>
+                                        <th className="border border-gray-300 p-2 text-center">ល្មើសបទបញ្ជាការងារ</th>
+                                        <th className="border border-gray-300 p-2 text-center">អនុវត្តពិន័យ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {staff.discipline.map((item, idx) => (
+                                        <tr key={idx} className="even:bg-gray-50">
+                                            <td className="border border-gray-300 p-2 text-Letf">{formatKhmerDate(item.date)}</td>
+                                            <td className="border border-gray-300 p-2 text-red-700 font-medium">{item.offense}</td>
+                                            <td className="border border-gray-300 p-2">{item.penalty}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    <div className="mt-16 grid grid-cols-2 gap-16 text-center break-inside-avoid items-start">
+                        <div>
+                            <p className="font-bold mb-20 text-gray-700">ហត្ថលេខាបុគ្គលិក</p>
+                            <div className="border-t border-black w-48 mx-auto"></div>
+                            <p className="mt-2 text-sm font-bold">{staff.name}</p>
+                        </div>
+                        <div className="mt-10">
+                            <p className="font-bold mb-20 text-gray-700">ហត្ថលេខាអ្នកគ្រប់គ្រង</p>
+                            <div className="border-t border-black w-48 mx-auto"></div>
+                            <p className="mt-2 text-sm font-bold">លោក ពៅ ដារ៉ូ</p>
+                        </div>
+                    </div>
+                    
+                    <div className="mt-12 text-center text-xs text-gray-400 border-t pt-4">
+                        Generated on: {generatedDateKh} by HR Data Center
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App Component ---
+        function App() {
+            const [rawData, setRawData] = useState(null); // Store raw data to avoid refetching
+            const [staffData, setStaffData] = useState({});
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [selectedStaff, setSelectedStaff] = useState(null);
+            const [activeTab, setActiveTab] = useState('home'); // 'home', 'settings'
+            const [printMode, setPrintMode] = useState('standard'); // 'standard' or 'full'
+            const [showPrintMenu, setShowPrintMenu] = useState(false);
+            const printMenuRef = useRef(null);
+
+            // Cache Configuration
+            const CACHE_KEY = 'hr_data_cache_v1';
+            const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
+
+            // Close print menu when clicking outside
+            useEffect(() => {
+                function handleClickOutside(event) {
+                    if (printMenuRef.current && !printMenuRef.current.contains(event.target)) {
+                        setShowPrintMenu(false);
+                    }
+                }
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
+
+            // Filter State
+            const [filterConfig, setFilterConfig] = useState({
+                mode: 'month', // 'month' or 'range'
+                month: new Date().getMonth(),
+                year: new Date().getFullYear(),
+                fromDate: '',
+                toDate: ''
+            });
+
+            const currentDateDisplay = useMemo(() => {
+                if (filterConfig.mode === 'month') {
+                    return `ប្រចាំខែ ${khmerMonths[filterConfig.month]} ឆ្នាំ ${toKhmerNum(filterConfig.year)}`;
+                } else if (filterConfig.mode === 'range' && filterConfig.fromDate && filterConfig.toDate) {
+                    return `ចាប់ពី ${formatKhmerDate(filterConfig.fromDate)} ដល់ ${formatKhmerDate(filterConfig.toDate)}`;
+                }
+                return "ទាំងអស់";
+            }, [filterConfig]);
+
+            // Function to check if a date matches the current filter
+            const isDateInFilter = (dateStr) => {
+                const date = parseDate(dateStr);
+                if (!date) return false;
+
+                if (filterConfig.mode === 'month') {
+                    return date.getMonth() === filterConfig.month && date.getFullYear() === filterConfig.year;
+                } else if (filterConfig.mode === 'range') {
+                    if (!filterConfig.fromDate || !filterConfig.toDate) return true;
+                    const from = new Date(filterConfig.fromDate);
+                    const to = new Date(filterConfig.toDate);
+                    // Set hours to compare dates correctly
+                    from.setHours(0,0,0,0);
+                    to.setHours(23,59,59,999);
+                    return date >= from && date <= to;
+                }
+                return false;
+            };
+
+            const fetchRawData = async (forceRefresh = false) => {
+                setLoading(true);
+                setError(null);
+
+                // 1. Try loading from cache first if not forced
+                if (!forceRefresh) {
+                    try {
+                        const cached = localStorage.getItem(CACHE_KEY);
+                        if (cached) {
+                            const { timestamp, data } = JSON.parse(cached);
+                            // Check if cache is still valid (less than CACHE_DURATION old)
+                            if (Date.now() - timestamp < CACHE_DURATION) {
+                                console.log("Using cached data");
+                                setRawData(data);
+                                setLoading(false);
+                                return; // Exit early, skip network fetch
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Cache read error:", e);
+                        // If error reading cache, proceed to network fetch
+                    }
+                }
+
+                // 2. Fetch from Network
+                try {
+                    const fetchSheet = async (config) => {
+                        const url = `https://docs.google.com/spreadsheets/d/${config.id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(config.name)}`;
+                        // Add cache: 'no-store' to ensure we get fresh data when forcing refresh
+                        const response = await fetch(url, { cache: 'no-store' });
+                        if (!response.ok) throw new Error(`Failed to load ${config.name}`);
+                        const text = await response.text();
+                        return { data: parseCSV(text), config };
+                    };
+
+                    const [gatePassRaw, leaveRaw, homeLeaveRaw, attendanceRaw, masterListRaw, disciplineRaw, cleaningRaw] = await Promise.all([
+                        fetchSheet(SHEETS.gatePass),
+                        fetchSheet(SHEETS.leave),
+                        fetchSheet(SHEETS.homeLeave),
+                        fetchSheet(SHEETS.attendance),
+                        fetchSheet(SHEETS.masterList),
+                        fetchSheet(SHEETS.discipline),
+                        fetchSheet(SHEETS.cleaning)
+                    ]);
+
+                    const newData = { gatePassRaw, leaveRaw, homeLeaveRaw, attendanceRaw, masterListRaw, disciplineRaw, cleaningRaw };
+                    setRawData(newData);
+
+                    // 3. Save to cache
+                    try {
+                        localStorage.setItem(CACHE_KEY, JSON.stringify({
+                            timestamp: Date.now(),
+                            data: newData
+                        }));
+                    } catch (e) {
+                        console.warn("Cache write error (storage might be full):", e);
+                    }
+
+                } catch (err) {
+                    console.error(err);
+                    setError("សូមពិនិត្យមើលថាតើ Google Sheet ទាំងអស់ត្រូវបាន Publish to Web ហើយឬនៅ?");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const processData = () => {
+                if (!rawData) return;
+
+                const { gatePassRaw, leaveRaw, homeLeaveRaw, attendanceRaw, masterListRaw, disciplineRaw, cleaningRaw } = rawData;
+                const processed = {};
+
+                // 1. Process Master List
+                masterListRaw.data.slice(SHEETS.masterList.startRow - 1).forEach(row => {
+                    const id = row[getColIndex(SHEETS.masterList.cols.id)];
+                    if (id) {
+                        const cleanId = id.trim();
+                        if (/[a-zA-Z]/.test(cleanId)) return; 
+                        if (!processed[cleanId]) {
+                            processed[cleanId] = {
+                                id: cleanId, name: 'Unknown', attendance: [], gatePasses: [], leaves: [], homeLeaves: [], discipline: [],
+                                photo: null, enName: null, gender: null, group: null, grade: null, dept: null, telegram: null
+                            };
+                        }
+                        const staff = processed[cleanId];
+                        staff.photo = row[getColIndex(SHEETS.masterList.cols.photo)];
+                        staff.enName = row[getColIndex(SHEETS.masterList.cols.enName)];
+                        staff.gender = row[getColIndex(SHEETS.masterList.cols.gender)];
+                        staff.group = row[getColIndex(SHEETS.masterList.cols.group)];
+                        staff.grade = row[getColIndex(SHEETS.masterList.cols.grade)];
+                        staff.dept = row[getColIndex(SHEETS.masterList.cols.dept)];
+                        staff.telegram = row[getColIndex(SHEETS.masterList.cols.telegram)];
+                        const khName = row[getColIndex(SHEETS.masterList.cols.khName)];
+                        if (khName) staff.name = khName;
+                    }
+                });
+
+                // 2. Process Attendance
+                attendanceRaw.data.slice(SHEETS.attendance.startRow - 1).forEach(row => {
+                    const id = row[getColIndex(SHEETS.attendance.cols.id)];
+                    const dateStr = row[getColIndex(SHEETS.attendance.cols.date)];
+                    if (id && isDateInFilter(dateStr)) {
+                        const cleanId = id.trim();
+                        if (processed[cleanId]) {
+                            processed[cleanId].attendance.push({
+                                date: dateStr,
+                                shift: row[getColIndex(SHEETS.attendance.cols.shift)],
+                                in: row[getColIndex(SHEETS.attendance.cols.timeIn)],
+                                out: row[getColIndex(SHEETS.attendance.cols.timeOut)],
+                            });
+                        }
+                    }
+                });
+
+                // 3. Process Gate Pass
+                gatePassRaw.data.slice(SHEETS.gatePass.startRow - 1).forEach(row => {
+                    const status = row[getColIndex(SHEETS.gatePass.cols.status)];
+                    const dateOutStr = row[getColIndex(SHEETS.gatePass.cols.dateOut)];
+                    if (status && status.includes('អនុញ្ញាត') && isDateInFilter(dateOutStr)) {
+                        const id = row[getColIndex(SHEETS.gatePass.cols.id)];
+                        if (id && processed[id.trim()]) {
+                            processed[id.trim()].gatePasses.push({
+                                dateOut: dateOutStr,
+                                timeOut: row[getColIndex(SHEETS.gatePass.cols.timeOut)],
+                                dateIn: row[getColIndex(SHEETS.gatePass.cols.dateIn)],
+                                timeIn: row[getColIndex(SHEETS.gatePass.cols.timeIn)],
+                                reason: row[getColIndex(SHEETS.gatePass.cols.reason)],
+                                duration: row[getColIndex(SHEETS.gatePass.cols.duration)],
+                            });
+                        }
+                    }
+                });
+
+                // 4. Process Leave Request
+                leaveRaw.data.slice(SHEETS.leave.startRow - 1).forEach(row => {
+                    const status = row[getColIndex(SHEETS.leave.cols.status)];
+                    const dateStr = row[getColIndex(SHEETS.leave.cols.date)];
+                    if (status && status.includes('អនុញ្ញាត') && isDateInFilter(dateStr)) {
+                        const id = row[getColIndex(SHEETS.leave.cols.id)];
+                        if (id && processed[id.trim()]) {
+                            processed[id.trim()].leaves.push({
+                                date: dateStr,
+                                time: row[getColIndex(SHEETS.leave.cols.time)],
+                                reason: row[getColIndex(SHEETS.leave.cols.reason)],
+                                duration: row[getColIndex(SHEETS.leave.cols.duration)],
+                            });
+                        }
+                    }
+                });
+
+                // 5. Process Home Leave
+                homeLeaveRaw.data.slice(SHEETS.homeLeave.startRow - 1).forEach(row => {
+                    const id = row[getColIndex(SHEETS.homeLeave.cols.id)];
+                    const dateOutStr = row[getColIndex(SHEETS.homeLeave.cols.dateOut)];
+                    if (id && isDateInFilter(dateOutStr)) {
+                        if (processed[id.trim()]) {
+                            processed[id.trim()].homeLeaves.push({
+                                dateOut: dateOutStr,
+                                timeOut: row[getColIndex(SHEETS.homeLeave.cols.timeOut)],
+                                dateIn: row[getColIndex(SHEETS.homeLeave.cols.dateIn)],
+                                timeIn: row[getColIndex(SHEETS.homeLeave.cols.timeIn)],
+                                reason: row[getColIndex(SHEETS.homeLeave.cols.reason)],
+                                duration: row[getColIndex(SHEETS.homeLeave.cols.duration)],
+                            });
+                        }
+                    }
+                });
+
+                // 6. Process Discipline (General)
+                disciplineRaw.data.slice(SHEETS.discipline.startRow - 1).forEach(row => {
+                    const id = row[getColIndex(SHEETS.discipline.cols.id)];
+                    const dateStr = row[getColIndex(SHEETS.discipline.cols.date)];
+                    if (id && isDateInFilter(dateStr)) {
+                        const cleanId = id.trim();
+                        // Constraint: Only process if staff exists in Master List
+                        if (processed[cleanId]) {
+                            processed[cleanId].discipline.push({
+                                date: dateStr,
+                                offense: row[getColIndex(SHEETS.discipline.cols.offense)],
+                                penalty: row[getColIndex(SHEETS.discipline.cols.penalty)]
+                            });
+                        }
+                    }
+                });
+
+                // 7. Process Discipline (Cleaning)
+                cleaningRaw.data.slice(SHEETS.cleaning.startRow - 1).forEach(row => {
+                    const id = row[getColIndex(SHEETS.cleaning.cols.id)];
+                    const dateStr = row[getColIndex(SHEETS.cleaning.cols.date)];
+                    if (id && isDateInFilter(dateStr)) {
+                        const cleanId = id.trim();
+                        if (processed[cleanId]) {
+                            processed[cleanId].discipline.push({
+                                date: dateStr,
+                                offense: row[getColIndex(SHEETS.cleaning.cols.offense)],
+                                penalty: row[getColIndex(SHEETS.cleaning.cols.penalty)]
+                            });
+                        }
+                    }
+                });
+
+                setStaffData(processed);
+                
+                // Re-select staff if one is currently viewed to update their data
+                if (selectedStaff) {
+                    setSelectedStaff(processed[selectedStaff.id]);
+                }
+            };
+
+            // Initial Fetch - pass false to use cache if available
+            useEffect(() => {
+                fetchRawData(false);
+            }, []);
+
+            // Reprocess when filter or rawData changes
+            useEffect(() => {
+                processData();
+            }, [rawData, filterConfig]);
+
+            const handlePrint = (mode) => {
+                setPrintMode(mode);
+                setShowPrintMenu(false);
+
+                // Generate Filename for PDF
+                // Format: ID_Name របាយការណ៍វត្តមានប្រចាំខែ... ឆ្នាំ...
+                let dateString = "";
+                if (filterConfig.mode === 'month') {
+                    dateString = `ខែ${khmerMonths[filterConfig.month]} ឆ្នាំ${toKhmerNum(filterConfig.year)}`;
+                } else if (filterConfig.mode === 'range' && filterConfig.fromDate && filterConfig.toDate) {
+                    dateString = `ចាប់ពី${formatKhmerDate(filterConfig.fromDate)}ដល់${formatKhmerDate(filterConfig.toDate)}`;
+                } else {
+                    dateString = `សរុប`;
+                }
+
+                // Set document title which acts as the default filename for "Save as PDF"
+                if (selectedStaff) {
+                    document.title = `${selectedStaff.id}_${selectedStaff.name} របាយការណ៍វត្តមានប្រចាំ${dateString}`;
+                }
+
+                // Small timeout to allow state to update before printing
+                setTimeout(() => {
+                    window.print();
+                    // Optional: Reset title after printing if desired, 
+                    // but keeping it helps user know which file is open.
+                    // document.title = "HR Data Center"; 
+                }, 100);
+            };
+
+            const filteredStaff = Object.values(staffData).filter(staff => {
+                const term = searchTerm.toLowerCase();
+                return (
+                    staff.name.toLowerCase().includes(term) ||
+                    (staff.enName && staff.enName.toLowerCase().includes(term)) ||
+                    staff.id.toLowerCase().includes(term)
+                );
+            });
+
+            if (selectedStaff) {
+                return (
+                    <div className="min-h-screen bg-gray-50 font-khmer pb-safe">
+                        <PrintLayout staff={selectedStaff} currentDateDisplay={currentDateDisplay} printMode={printMode} />
+                        <div className="no-print">
+                            <div className="bg-blue-700 p-4 text-white sticky top-0 z-40 shadow-md flex items-center justify-between animate-fade-in-up">
+                                <div className="flex items-center gap-3">
+                                    <button onClick={() => setSelectedStaff(null)} className="hover:bg-blue-600 p-2 rounded-full transition shadow-sm">
+                                        <ArrowRight className="transform rotate-180 w-6 h-6" />
+                                    </button>
+                                    <div>
+                                        <h2 className="text-lg font-bold flex items-center gap-2">
+                                            {selectedStaff.name !== 'Unknown' ? selectedStaff.name : ''}
+                                        </h2>
+                                    </div>
+                                </div>
+                                <div className="relative" ref={printMenuRef}>
+                                    <button 
+                                        onClick={() => setShowPrintMenu(!showPrintMenu)}
+                                        className="flex items-center gap-2 bg-white text-blue-700 px-4 py-2 rounded-full font-bold text-sm shadow hover:bg-blue-50 transition transform active:scale-95"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        <span className="hidden md:inline">ទាញយក PDF</span>
+                                        <span className="md:hidden">PDF</span>
+                                        <ChevronDown className={`w-4 h-4 transition-transform ${showPrintMenu ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    
+                                    {showPrintMenu && (
+                                        <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl z-50 overflow-hidden border border-gray-100 animate-fade-in-up">
+                                            <div className="py-1">
+                                                <button 
+                                                    onClick={() => handlePrint('standard')}
+                                                    className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                                >
+                                                    <FileText className="w-4 h-4 text-gray-500" />
+                                                    ទាញយក (ទូទៅ)
+                                                </button>
+                                                <button 
+                                                    onClick={() => handlePrint('full')}
+                                                    className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                                                >
+                                                    <Gavel className="w-4 h-4 text-red-500" />
+                                                    ទាញយក (រួមទាំងវិន័យ)
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="max-w-3xl mx-auto animate-fade-in-up pb-24 md:pb-10" style={{ animationDelay: '0.1s' }}>
+                                <div className="bg-white shadow-md rounded-b-2xl border-b mb-6 p-6 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-10 -mt-10 opacity-50"></div>
+                                    <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
+                                        <div className="w-32 h-32 rounded-full border-4 border-white shadow-xl overflow-hidden bg-gray-200 shrink-0">
+                                            {selectedStaff.photo ? (
+                                                <img src={selectedStaff.photo} alt="Staff" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-100">
+                                                    <User className="w-12 h-12"/>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex-1 text-center md:text-left space-y-3 w-full">
+                                            <div>
+                                                <h1 className="text-2xl font-bold text-gray-800 leading-tight">
+                                                    {selectedStaff.name !== 'Unknown' ? selectedStaff.name : ''}
+                                                </h1>
+                                                {selectedStaff.enName && (
+                                                    <p className="text-base text-blue-600 font-bold uppercase tracking-wider">{selectedStaff.enName}</p>
+                                                )}
+                                                <div className="flex items-center justify-center md:justify-start gap-2 mt-1 text-gray-500 text-sm">
+                                                    <IdCard className="w-4 h-4"/> <span>ID: {selectedStaff.id}</span>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3 text-sm text-gray-600 mt-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                                <div className="flex items-center gap-2 justify-start">
+                                                    <Briefcase className="w-4 h-4 text-blue-500"/>
+                                                    <span className="truncate">{selectedStaff.grade || 'N/A'}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 justify-start">
+                                                    <Building className="w-4 h-4 text-blue-500"/>
+                                                    <span className="truncate">{selectedStaff.dept || 'N/A'}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 justify-start">
+                                                    <Users className="w-4 h-4 text-blue-500"/>
+                                                    <span className="truncate">{selectedStaff.group || 'N/A'}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 justify-start">
+                                                    <User className="w-4 h-4 text-blue-500"/>
+                                                    <span>{selectedStaff.gender || 'N/A'}</span>
+                                                </div>
+                                            </div>
+                                            {selectedStaff.telegram && (
+                                                <div className="mt-4 flex justify-center md:justify-start">
+                                                    <a 
+                                                        href={normalizeUrl(selectedStaff.telegram)} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-2 bg-blue-500 text-white px-5 py-2 rounded-full hover:bg-blue-600 transition shadow-md hover:shadow-lg transform hover:-translate-y-0.5 text-sm font-medium"
+                                                    >
+                                                        <Send className="w-4 h-4" />
+                                                        ទំនាក់ទំនង (Telegram)
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="px-4 space-y-6 pb-8">
+                                    {/* Stats Cards */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 card-hover-effect">
+                                            <div className="flex items-center gap-2 mb-2 text-green-600">
+                                                <CheckCircle className="w-5 h-5" />
+                                                <p className="text-gray-500 text-[10px] md:text-xs font-bold uppercase">វត្តមាន ({filterConfig.mode === 'month' ? khmerMonths[filterConfig.month] : 'សរុប'})</p>
+                                            </div>
+                                            <p className="text-3xl font-bold text-gray-800">{selectedStaff.attendance.length} <span className="text-sm font-normal text-gray-400">ថ្ងៃ</span></p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 card-hover-effect">
+                                            <div className="flex items-center gap-2 mb-2 text-orange-500">
+                                                <AlertCircle className="w-5 h-5" />
+                                                <p className="text-gray-500 text-[10px] md:text-xs font-bold uppercase">ច្បាប់សរុប</p>
+                                            </div>
+                                            <p className="text-3xl font-bold text-gray-800">
+                                                {selectedStaff.gatePasses.length + selectedStaff.leaves.length + selectedStaff.homeLeaves.length} <span className="text-sm font-normal text-gray-400">ដង</span>
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Discipline Card (UI View - Always Visible if data exists) */}
+                                    {selectedStaff.discipline && selectedStaff.discipline.length > 0 && (
+                                        <div className="bg-white rounded-2xl shadow-sm border border-red-100 overflow-hidden card-hover-effect">
+                                            <div className="bg-red-50 p-4 border-b border-red-100 flex items-center gap-3">
+                                                <div className="bg-red-100 p-2 rounded-full">
+                                                    <Gavel className="w-5 h-5 text-red-600" />
+                                                </div>
+                                                <h3 className="font-bold text-red-900 text-lg">វិន័យ និងសណ្ដាប់ធ្នាប់</h3>
+                                            </div>
+                                            <div className="divide-y divide-red-50">
+                                                {selectedStaff.discipline.map((item, idx) => (
+                                                    <div key={idx} className="p-4 hover:bg-red-50/30 transition">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <span className="font-semibold text-red-800 text-sm">{item.offense}</span>
+                                                        </div>
+                                                        <div className="text-xs text-gray-600 bg-red-50/50 p-2 rounded-lg">
+                                                            <div className="flex justify-between mb-1">
+                                                                <span>កាលបរិច្ឆេទ: <span className="text-gray-900 font-bold">{formatKhmerDate(item.date)}</span></span>
+                                                            </div>
+                                                            <div className="mt-1 text-red-700 pt-1 border-t border-red-100 font-bold">ពិន័យ: {item.penalty}</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Gate Pass Section */}
+                                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden card-hover-effect">
+                                        <div className="bg-orange-50 p-4 border-b border-orange-100 flex items-center gap-3">
+                                            <div className="bg-orange-100 p-2 rounded-full">
+                                                <MapPin className="w-5 h-5 text-orange-600" />
+                                            </div>
+                                            <h3 className="font-bold text-orange-900 text-lg">ច្បាប់ចេញក្រៅ</h3>
+                                        </div>
+                                        {selectedStaff.gatePasses.length === 0 ? (
+                                            <p className="p-6 text-gray-400 text-center text-sm bg-gray-50">គ្មានទិន្នន័យ</p>
+                                        ) : (
+                                            <div className="divide-y divide-gray-50">
+                                                {selectedStaff.gatePasses.map((item, idx) => (
+                                                    <div key={idx} className="p-4 hover:bg-gray-50 transition">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <span className="font-semibold text-gray-800 text-sm">{item.reason}</span>
+                                                            <span className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded-full border border-green-200">អនុញ្ញាត</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 bg-gray-50 p-2 rounded-lg">
+                                                            <div>ចេញ: <span className="text-gray-900 font-bold">{formatKhmerDate(item.dateOut)} {item.timeOut}</span></div>
+                                                            <div>ចូល: <span className="text-gray-900 font-bold">{formatKhmerDate(item.dateIn)} {item.timeIn}</span></div>
+                                                            <div className="col-span-2 mt-1 text-gray-500 pt-1 border-t border-gray-200">រយៈពេល: {item.duration}</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Leave Section */}
+                                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden card-hover-effect">
+                                        <div className="bg-red-50 p-4 border-b border-red-100 flex items-center gap-3">
+                                            <div className="bg-red-100 p-2 rounded-full">
+                                                <Briefcase className="w-5 h-5 text-red-600" />
+                                            </div>
+                                            <h3 className="font-bold text-red-900 text-lg">ច្បាប់ឈប់សម្រាក (CRB)</h3>
+                                        </div>
+                                        {selectedStaff.leaves.length === 0 ? (
+                                            <p className="p-6 text-gray-400 text-center text-sm bg-gray-50">គ្មានទិន្នន័យ</p>
+                                        ) : (
+                                            <div className="divide-y divide-gray-50">
+                                                {selectedStaff.leaves.map((item, idx) => (
+                                                    <div key={idx} className="p-4 hover:bg-gray-50 transition">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <span className="font-semibold text-gray-800 text-sm">{item.reason}</span>
+                                                        </div>
+                                                        <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded-lg">
+                                                            <div>កាលបរិច្ឆេទ: <span className="text-gray-900 font-bold">{formatKhmerDate(item.date)} {item.time}</span></div>
+                                                            <div className="mt-1 text-gray-500 pt-1 border-t border-gray-200">រយៈពេល: {item.duration}</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Home Leave Section */}
+                                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden card-hover-effect">
+                                        <div className="bg-blue-50 p-4 border-b border-blue-100 flex items-center gap-3">
+                                            <div className="bg-blue-100 p-2 rounded-full">
+                                                <Home className="w-5 h-5 text-blue-600" />
+                                            </div>
+                                            <h3 className="font-bold text-blue-900 text-lg">ច្បាប់ទៅផ្ទះ</h3>
+                                        </div>
+                                        {selectedStaff.homeLeaves.length === 0 ? (
+                                            <p className="p-6 text-gray-400 text-center text-sm bg-gray-50">គ្មានទិន្នន័យ</p>
+                                        ) : (
+                                            <div className="divide-y divide-gray-50">
+                                                {selectedStaff.homeLeaves.map((item, idx) => (
+                                                    <div key={idx} className="p-4 hover:bg-gray-50 transition">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <span className="font-semibold text-gray-800 text-sm">{item.reason}</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 bg-gray-50 p-2 rounded-lg">
+                                                            <div>ចេញ: <span className="text-gray-900 font-bold">{formatKhmerDate(item.dateOut)} {item.timeOut}</span></div>
+                                                            <div>ចូល: <span className="text-gray-900 font-bold">{formatKhmerDate(item.dateIn)} {item.timeIn}</span></div>
+                                                            <div className="col-span-2 mt-1 text-gray-500 pt-1 border-t border-gray-200">រយៈពេល: {item.duration}</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Attendance History */}
+                                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden card-hover-effect">
+                                        <div className="bg-gray-50 p-4 border-b border-gray-100 flex items-center gap-3">
+                                            <div className="bg-white p-2 rounded-full shadow-sm">
+                                                <Clock className="w-5 h-5 text-gray-600" />
+                                            </div>
+                                            <h3 className="font-bold text-gray-900 text-lg">ប្រវត្តិវត្តមាន</h3>
+                                        </div>
+                                        <div className="max-h-64 overflow-y-auto">
+                                            <table className="w-full text-xs text-left">
+                                                <thead className="bg-gray-100 text-gray-500 font-medium sticky top-0 z-10">
+                                                    <tr>
+                                                        <th className="p-3 rounded-tl-lg">កាលបរិច្ឆេទ</th>
+                                                        <th className="p-3">វេន</th>
+                                                        <th className="p-3 rounded-tr-lg">ចូល/ចេញ</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-50">
+                                                    {selectedStaff.attendance.map((att, idx) => (
+                                                        <tr key={idx} className="hover:bg-gray-50 transition">
+                                                            <td className="p-3 font-medium text-gray-700">{formatKhmerDate(att.date)}</td>
+                                                            <td className="p-3 text-gray-500">{att.shift}</td>
+                                                            <td className="p-3">
+                                                                <div className="flex flex-col gap-1">
+                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800">IN: {att.in}</span>
+                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-800">OUT: {att.out}</span>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                    {selectedStaff.attendance.length === 0 && (
+                                                        <tr><td colSpan="3" className="p-6 text-center text-gray-400">គ្មានទិន្នន័យ</td></tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gray-100 font-khmer text-gray-800">
+                    <header className="no-print bg-gradient-to-r from-blue-800 to-blue-700 text-white p-6 shadow-xl sticky top-0 z-30 rounded-b-3xl mb-6 animate-fade-in-up">
+                        <div className="flex justify-between items-center mb-6 max-w-4xl mx-auto">
+                            <div>
+                                <h1 className="text-2xl font-bold flex items-center gap-3 mb-1">
+                                    <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                                        <FileText className="w-6 h-6" />
+                                    </div>
+                                    HR Data Center
+                                </h1>
+                                <p className="text-blue-100 text-sm opacity-90 pl-1 flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" /> {currentDateDisplay}
+                                </p>
+                            </div>
+                            <div className="flex gap-2">
+                                {/* Desktop Settings Button */}
+                                <button 
+                                    onClick={() => setActiveTab(activeTab === 'settings' ? 'home' : 'settings')} 
+                                    className="hidden md:flex p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition shadow-inner border border-white/10"
+                                >
+                                    <Settings className="w-5 h-5" />
+                                </button>
+                                <button 
+                                    onClick={() => fetchRawData(true)} 
+                                    className="p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition shadow-inner border border-white/10"
+                                >
+                                    <RefreshCcw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
+                        </div>
+                        {/* Hide Search bar if in Settings Mode */}
+                        {activeTab === 'home' && (
+                            <div className="relative max-w-md mx-auto">
+                                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                    <Search className="text-blue-300 w-5 h-5" />
+                                </div>
+                                <input 
+                                    type="text" 
+                                    placeholder="ស្វែងរកឈ្មោះ (ខ្មែរ/អង់គ្លេស) ឬ អត្តលេខ..." 
+                                    className="w-full pl-11 pr-4 py-4 rounded-2xl text-gray-800 bg-white/95 backdrop-blur-sm focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-lg transition placeholder-gray-400"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                        )}
+                    </header>
+
+                    <main className="no-print px-4 max-w-4xl mx-auto pb-24 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+                        {activeTab === 'settings' ? (
+                            <SettingsPage filterConfig={filterConfig} setFilterConfig={setFilterConfig} />
+                        ) : (
+                            <>
+                                {error && (
+                                    <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-r-lg shadow-sm flex items-start gap-3 animate-fade-in-up">
+                                        <AlertCircle className="w-6 h-6 mt-0.5 shrink-0" />
+                                        <div>
+                                            <p className="font-bold text-lg">មានបញ្ហា!</p>
+                                            <p className="text-sm opacity-90">{error}</p>
+                                        </div>
+                                    </div>
+                                )}
+                                {loading ? (
+                                    <div className="flex flex-col items-center justify-center h-80 text-gray-400 animate-pulse">
+                                        <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                                        <p className="text-lg font-medium">កំពុងដំណើរការទិន្នន័យ...</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <div className="text-sm text-gray-500 mb-4 flex justify-between items-center px-2">
+                                            <span className="font-medium">បង្ហាញ {filteredStaff.length} បុគ្គលិក</span>
+                                            <span className="text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-full font-bold">Total: {Object.keys(staffData).length}</span>
+                                        </div>
+                                        {filteredStaff.map((staff, idx) => (
+                                            <div 
+                                                key={staff.id}
+                                                onClick={() => setSelectedStaff(staff)}
+                                                className="bg-white p-4 rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer border border-gray-100 flex justify-between items-center group animate-fade-in-up"
+                                                style={{ animationDelay: `${0.05 * (idx > 20 ? 20 : idx)}s` }}
+                                            >
+                                                <div className="flex items-center gap-4 overflow-hidden w-full">
+                                                    <div className="w-16 h-16 rounded-full bg-gray-100 flex-shrink-0 overflow-hidden border-2 border-white shadow-sm group-hover:border-blue-100 transition">
+                                                        {staff.photo ? (
+                                                            <img src={staff.photo} alt={staff.enName} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                                                <User className="w-8 h-8" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <h3 className="font-bold text-gray-800 truncate flex flex-wrap items-end gap-2 text-lg group-hover:text-blue-700 transition">
+                                                            <span>{staff.name !== 'Unknown' ? staff.name : ''}</span>
+                                                            {staff.enName && <span className="text-sm text-gray-400 font-sans font-bold uppercase mb-0.5">{staff.enName}</span>}
+                                                        </h3>
+                                                        <div className="flex items-center gap-3 text-xs text-gray-500 mb-2 mt-1">
+                                                            <span className="bg-gray-100 px-2 py-1 rounded-md flex items-center gap-1.5 font-mono text-gray-600">
+                                                                <IdCard className="w-3 h-3"/> {staff.id}
+                                                            </span>
+                                                            {staff.dept && <span className="truncate text-gray-400 flex items-center gap-1"><Building className="w-3 h-3"/> {staff.dept}</span>}
+                                                        </div>
+                                                        <div className="flex gap-2 text-[10px]">
+                                                            {(staff.gatePasses.length > 0 || staff.leaves.length > 0 || staff.discipline.length > 0) ? (
+                                                                <>
+                                                                    {staff.gatePasses.length > 0 && (
+                                                                        <span className="bg-orange-50 text-orange-700 px-2 py-1 rounded-full border border-orange-100 font-bold">GP: {staff.gatePasses.length}</span>
+                                                                    )}
+                                                                    {staff.leaves.length > 0 && (
+                                                                        <span className="bg-red-50 text-red-700 px-2 py-1 rounded-full border border-red-100 font-bold">Leave: {staff.leaves.length}</span>
+                                                                    )}
+                                                                    {staff.discipline.length > 0 && (
+                                                                        <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full border border-red-200 font-bold flex items-center gap-1">
+                                                                            <Gavel className="w-3 h-3" /> {staff.discipline.length}
+                                                                        </span>
+                                                                    )}
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-gray-300 italic pl-1">គ្មានសំណើ</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="bg-gray-50 p-2 rounded-full group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors ml-2">
+                                                    <ChevronRight className="text-gray-300 w-5 h-5 group-hover:text-blue-500" />
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {filteredStaff.length === 0 && !loading && (
+                                            <div className="text-center py-16 text-gray-400 flex flex-col items-center animate-fade-in-up">
+                                                <div className="bg-gray-100 p-4 rounded-full mb-4">
+                                                    <User className="w-10 h-10 opacity-30" />
+                                                </div>
+                                                <p className="text-lg">រកមិនឃើញបុគ្គលិកឈ្មោះនេះទេ</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </main>
+                    
+                    {/* Mobile Footer Navigation */}
+                    <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
